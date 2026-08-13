@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [0.3.1]: https://github.com/huuuuppppp/mcp-testkit/compare/v0.3.0...v0.3.1
 
+## [0.3.1] - 2026-08-13
+
+### Note
+- Published to npm under the scoped name `@qi_c/mcp-testkit` (the unscoped
+  `mcp-testkit` was blocked by npm as too similar to an existing package).
+
 ## [0.3.0] - 2026-08-13
 
 ### Added

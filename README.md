@@ -3,8 +3,8 @@
 > Type-safe, in-process testing toolkit for [Model Context Protocol](https://modelcontextprotocol.io) (MCP) servers.
 
 [![CI](https://github.com/huuuuppppp/mcp-testkit/actions/workflows/ci.yml/badge.svg)](https://github.com/huuuuppppp/mcp-testkit/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/mcp-testkit?logo=npm&color=cb3837)](https://www.npmjs.com/package/mcp-testkit)
-[![npm downloads](https://img.shields.io/npm/dm/mcp-testkit?color=cb3837)](https://www.npmjs.com/package/mcp-testkit)
+[![npm version](https://img.shields.io/npm/v/@qi_c/mcp-testkit?logo=npm&color=cb3837)](https://www.npmjs.com/package/@qi_c/mcp-testkit)
+[![npm downloads](https://img.shields.io/npm/dm/@qi_c/mcp-testkit?color=cb3837)](https://www.npmjs.com/package/@qi_c/mcp-testkit)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-%5E1.0-7c3aed)](https://github.com/modelcontextprotocol/typescript-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
@@ -45,7 +45,7 @@ first-class testing story**. Existing approaches force you to either:
 ---## Installation
 
 ```bash
-npm install --save-dev mcp-testkit
+npm install --save-dev @qi_c/mcp-testkit
 ```
 
 `mcp-testkit` has peer dependencies on `@modelcontextprotocol/sdk` (`^1.0`)
@@ -62,7 +62,7 @@ Requires **Node.js 18 or newer**.
 import { describe, it, expect } from "vitest";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { createTestKit } from "mcp-testkit";
+import { createTestKit } from "@qi_c/mcp-testkit";
 
 function buildServer() {
   const server = new McpServer({ name: "calculator", version: "1.0.0" });
@@ -167,7 +167,7 @@ kit.expect(result).toMatchObject({ user: { id: 1 } }); // partial deep match
 Helper functions are also available for custom assertions:
 
 ```ts
-import { text, textBlocks, structured, isErrorResult } from "mcp-testkit";
+import { text, textBlocks, structured, isErrorResult } from "@qi_c/mcp-testkit";
 
 text(result);            // concatenated text content
 textBlocks(result);      // string[]
@@ -224,12 +224,12 @@ snap.expect("tools", tools.map((t) => t.name));
 
 ### Using with Node's built-in test runner
 
-The `mcp-testkit/node-test` subpath provides a bridge that auto-closes the kit
+The `@qi_c/mcp-testkit/node-test` subpath provides a bridge that auto-closes the kit
 and saves snapshots when using `node --test`:
 
 ```ts
 import test from "node:test";
-import { withNodeTest } from "mcp-testkit/node-test";
+import { withNodeTest } from "@qi_c/mcp-testkit/node-test";
 
 test("adds numbers", async (t) => {
   const { kit } = await withNodeTest(t, buildServer());
@@ -339,10 +339,10 @@ arguments.
 
 ```bash
 # Basic smoke test
-npx mcp-testkit contract node ./dist/server.js
+npx @qi_c/mcp-testkit contract node ./dist/server.js
 
 # With sample tool calls
-npx mcp-testkit contract node ./dist/server.js \
+npx @qi_c/mcp-testkit contract node ./dist/server.js \
   --call ping='{}' \
   --call add='{"a":1,"b":2}'
 ```
@@ -371,7 +371,7 @@ into a CI step.
 You can also use the programmatic API:
 
 ```ts
-import { runContract } from "mcp-testkit";
+import { runContract } from "@qi_c/mcp-testkit";
 
 const result = await runContract({
   command: "node",

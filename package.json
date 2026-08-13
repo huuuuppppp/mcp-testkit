@@ -1,5 +1,5 @@
 {
-  "name": "mcp-testkit",
+  "name": "@qi_c/mcp-testkit",
   "version": "0.3.1",
   "description": "Type-safe, in-process testing toolkit for Model Context Protocol (MCP) servers. Test tools, resources, and prompts without subprocesses, with framework-agnostic assertions and a contract CLI.",
   "keywords": [
@@ -80,5 +80,9 @@
   "homepage": "https://github.com/huuuuppppp/mcp-testkit#readme",
   "bugs": {
     "url": "https://github.com/huuuuppppp/mcp-testkit/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   }
 }
