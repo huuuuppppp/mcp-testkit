@@ -30,17 +30,28 @@ jobs:
       - name: Type check, test, and build
         run: npm run release:check
 
+      - name: Check whether NPM_TOKEN is configured
+        id: npm_token
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm
-        if: ${{ secrets.NPM_TOKEN != '' }}
+        if: steps.npm_token.outputs.available == 'true'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish skipped notice
-        if: ${{ secrets.NPM_TOKEN == '' }}
+      - name: Note npm publish was skipped
+        if: steps.npm_token.outputs.available == 'false'
         run: |
-          echo "NPM_TOKEN secret not set - skipping npm publish."
-          echo "Set NPM_TOKEN in repository secrets and re-run this job to publish."
+          echo "::warning::NPM_TOKEN not set - skipping npm publish."
+          echo "Add an NPM_TOKEN repository secret and re-run this job to publish."
 
       - name: Create GitHub Release
         env:
