@@ -10,6 +10,7 @@ export {
   type ConnectableServer,
   type TestKitOptions,
   type CallToolOptions,
+  type MockFeatureOptions,
 } from "./harness.js";
 
 export {
@@ -29,3 +30,18 @@ export {
   type ContractResult,
   type ContractCheck,
 } from "./contract.js";
+
+export {
+  SamplingMock,
+  ElicitationMock,
+  type SamplingResponder,
+  type ElicitationResponder,
+  type MockRequestExtra,
+} from "./mocks.js";
+
+export {
+  expectNotification,
+  isNotificationMessage,
+  type CapturedNotification,
+  type NotificationExpectation,
+} from "./notifications.js";

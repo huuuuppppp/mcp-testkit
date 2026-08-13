@@ -38,8 +38,10 @@ EXIT CODES
   2  Invalid usage.
 `;
 
+import pkg from "../package.json" with { type: "json" };
+
 function parseVersion(): string {
-  return "0.1.0";
+  return pkg.version;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {

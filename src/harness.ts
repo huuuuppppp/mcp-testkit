@@ -1,12 +1,21 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import {
+  CreateMessageRequestSchema,
+  ElicitRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import type {
   CallToolResult,
   ClientCapabilities,
   CompleteResult,
+  CreateMessageRequest,
+  CreateMessageResult,
+  ElicitRequest,
+  ElicitResult,
   GetPromptResult,
   Implementation,
+  JSONRPCMessage,
   ListPromptsResult,
   ListResourceTemplatesResult,
   ListResourcesResult,
@@ -14,6 +23,18 @@ import type {
   ReadResourceResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createExpectation, type Expectation } from "./assertions.js";
+import {
+  ElicitationMock,
+  SamplingMock,
+  type ElicitationResponder,
+  type SamplingResponder,
+} from "./mocks.js";
+import {
+  expectNotification,
+  isNotificationMessage,
+  type CapturedNotification,
+  type NotificationExpectation,
+} from "./notifications.js";
 
 /**
  * Any MCP server that can be attached to a transport.
@@ -26,20 +47,40 @@ export interface ConnectableServer {
   close?(): Promise<void>;
 }
 
+/**
+ * Options controlling the mock client capabilities advertised to the server.
+ *
+ * Pass `false` to opt out of advertising a capability (useful for testing how
+ * a server behaves with clients that do not support it). Pass an object to
+ * pre-configure the responder.
+ */
+export interface MockFeatureOptions {
+  sampling?: boolean | { respondWith?: SamplingResponder };
+  elicitation?:
+    | boolean
+    | { respondWith?: ElicitationResponder };
+}
+
 export interface TestKitOptions {
   /**
    * Client implementation info advertised to the server during the
    * MCP initialize handshake.
    *
-   * @default { name: "mcp-testkit", version: "<package version>" }
+   * @default { name: "mcp-testkit", version: "0.2.0" }
    */
   clientInfo?: Implementation;
   /**
-   * Client capabilities advertised during initialize.
-   *
-   * @default {}
+   * Extra client capabilities advertised during initialize. These are merged
+   * on top of the capabilities implied by `mocks`.
    */
   clientCapabilities?: ClientCapabilities;
+  /**
+   * Configure mock server-facing client capabilities (sampling, elicitation).
+   * Both are enabled by default with safe responders.
+   *
+   * @default { sampling: true, elicitation: true }
+   */
+  mocks?: MockFeatureOptions;
   /**
    * Called once the in-memory transports are created but before either
    * side is connected. Use this to customize transports (for example to
@@ -61,6 +102,8 @@ export interface CallToolOptions {
   timeout?: number;
 }
 
+type NotificationListener = (notification: CapturedNotification) => void;
+
 /**
  * A connected test harness for an MCP server.
  *
@@ -70,9 +113,16 @@ export interface CallToolOptions {
  */
 export class MCPTestKit {
   readonly client: Client;
+  /** Mock controller for `sampling/createMessage` requests. */
+  readonly sampling: SamplingMock;
+  /** Mock controller for `elicitation/create` requests. */
+  readonly elicitation: ElicitationMock;
+
   private readonly server: ConnectableServer;
   private readonly clientTransport: Transport;
   private readonly serverTransport: Transport;
+  private readonly capturedNotifications: CapturedNotification[] = [];
+  private readonly notificationListeners = new Set<NotificationListener>();
   private closed = false;
 
   private constructor(
@@ -80,11 +130,15 @@ export class MCPTestKit {
     server: ConnectableServer,
     clientTransport: Transport,
     serverTransport: Transport,
+    sampling: SamplingMock,
+    elicitation: ElicitationMock,
   ) {
     this.client = client;
     this.server = server;
     this.clientTransport = clientTransport;
     this.serverTransport = serverTransport;
+    this.sampling = sampling;
+    this.elicitation = elicitation;
   }
 
   /** @internal Use {@link createTestKit}. */
@@ -99,19 +153,103 @@ export class MCPTestKit {
       await options.setupTransports({ clientTransport, serverTransport });
     }
 
+    const samplingMock = new SamplingMock();
+    const elicitationMock = new ElicitationMock();
+
+    const samplingEnabled = options.mocks?.sampling !== false;
+    const elicitationEnabled = options.mocks?.elicitation !== false;
+
+    if (samplingEnabled) {
+      const cfg = options.mocks?.sampling;
+      if (cfg && typeof cfg === "object" && cfg.respondWith) {
+        samplingMock.setResponder(cfg.respondWith);
+      }
+    }
+    if (elicitationEnabled) {
+      const cfg = options.mocks?.elicitation;
+      if (cfg && typeof cfg === "object" && cfg.respondWith) {
+        elicitationMock.setResponder(cfg.respondWith);
+      }
+    }
+
+    const capabilities: ClientCapabilities = {
+      ...(options.clientCapabilities ?? {}),
+    };
+    if (samplingEnabled) {
+      capabilities.sampling = {};
+    }
+    if (elicitationEnabled) {
+      capabilities.elicitation = { form: {} };
+    }
+
     const client = new Client(
-      options.clientInfo ?? { name: "mcp-testkit", version: "0.1.0" },
-      {
-        capabilities: options.clientCapabilities ?? {},
-      },
+      options.clientInfo ?? { name: "mcp-testkit", version: "0.2.0" },
+      { capabilities },
     );
+
+    if (samplingEnabled) {
+      client.setRequestHandler(CreateMessageRequestSchema, async (request, extra) => {
+        const { params } = request as CreateMessageRequest;
+        return (await samplingMock._handle(
+          params,
+          extra,
+        )) as CreateMessageResult;
+      });
+    }
+
+    if (elicitationEnabled) {
+      client.setRequestHandler(ElicitRequestSchema, async (request, extra) => {
+        const { params } = request as ElicitRequest;
+        return (await elicitationMock._handle(
+          params,
+          extra,
+        )) as ElicitResult;
+      });
+    }
 
     await Promise.all([
       client.connect(clientTransport),
       server.connect(serverTransport),
     ]);
 
-    return new MCPTestKit(client, server, clientTransport, serverTransport);
+    const kit = new MCPTestKit(
+      client,
+      server,
+      clientTransport,
+      serverTransport,
+      samplingMock,
+      elicitationMock,
+    );
+    kit.installNotificationCapture();
+
+    return kit;
+  }
+
+  /**
+   * Wrap the client transport's inbound message handler so we can record
+   * every server-to-client notification without interfering with delivery.
+   */
+  private installNotificationCapture(): void {
+    const transport = this.clientTransport;
+    const original = transport.onmessage?.bind(transport);
+    transport.onmessage = (message: JSONRPCMessage) => {
+      if (isNotificationMessage(message)) {
+        const captured: CapturedNotification = {
+          method: message.method,
+          params: (message as { params?: unknown }).params,
+          timestamp: Date.now(),
+        };
+        this.capturedNotifications.push(captured);
+        for (const listener of this.notificationListeners) {
+          try {
+            listener(captured);
+          } catch {
+            // listener errors must not break message delivery
+          }
+        }
+      }
+      return original?.(message);
+    };
   }
 
   /** Return the server capabilities reported during initialize. */
@@ -212,6 +350,79 @@ export class MCPTestKit {
     return this.client.complete(params, { timeout });
   }
 
+  // ── Notifications ────────────────────────────────────────────────
+
+  /**
+   * A snapshot of all server-to-client notifications captured since the
+   * harness was created (or since {@link clearNotifications} was called).
+   */
+  get notifications(): readonly CapturedNotification[] {
+    return [...this.capturedNotifications];
+  }
+
+  /**
+   * Register a listener invoked for every captured notification.
+   *
+   * @returns An unsubscribe function.
+   */
+  onNotification(listener: NotificationListener): () => void {
+    this.notificationListeners.add(listener);
+    return () => this.notificationListeners.delete(listener);
+  }
+
+  /**
+   * Wait for a notification with the given method to arrive.
+   *
+   * Resolves immediately if a matching notification was already captured.
+   *
+   * @param method - The notification method to wait for.
+   * @param timeoutMs - Rejects if no matching notification arrives in time.
+   *                    Pass 0 to wait indefinitely. @default 5000
+   */
+  waitForNotification(
+    method: string,
+    timeoutMs = 5000,
+  ): Promise<CapturedNotification> {
+    const existing = this.capturedNotifications.find(
+      (n) => n.method === method,
+    );
+    if (existing) return Promise.resolve(existing);
+
+    return new Promise<CapturedNotification>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const unsubscribe = this.onNotification((n) => {
+        if (n.method === method) {
+          if (timer) clearTimeout(timer);
+          unsubscribe();
+          resolve(n);
+        }
+      });
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          unsubscribe();
+          reject(
+            new Error(
+              `Timed out after ${timeoutMs}ms waiting for notification "${method}"`,
+            ),
+          );
+        }, timeoutMs);
+      }
+    });
+  }
+
+  /**
+   * Start a framework-agnostic assertion chain for notifications with the
+   * given method.
+   */
+  expectNotification(method: string): NotificationExpectation {
+    return expectNotification(this.capturedNotifications, method);
+  }
+
+  /** Clear the captured notification history and pending listener state. */
+  clearNotifications(): void {
+    this.capturedNotifications.length = 0;
+  }
+
   /** Whether the harness has been closed. */
   get isClosed(): boolean {
     return this.closed;
@@ -224,8 +435,7 @@ export class MCPTestKit {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    // Closing either side tears down the linked in-memory pair, so we close
-    // both concurrently and tolerate errors from either side already closing.
+    this.notificationListeners.clear();
     const results = await Promise.allSettled([
       this.client.close(),
       this.server.close ? this.server.close() : Promise.resolve(),
@@ -235,7 +445,6 @@ export class MCPTestKit {
         (r): r is PromiseRejectedResult => r.status === "rejected",
       )
       .map((r) => r.reason)
-      // Ignore "connection already closed" noise from a linked peer close.
       .filter(
         (err) =>
           !(err instanceof Error && /connection closed/i.test(err.message)),
@@ -254,6 +463,11 @@ export class MCPTestKit {
  *
  * The server is connected to a paired in-memory transport and a full MCP
  * initialize handshake is performed before the returned promise resolves.
+ *
+ * By default the client advertises `sampling` and `elicitation` capabilities
+ * with safe mock responders; access them via `kit.sampling` and
+ * `kit.elicitation`. Notifications sent by the server are captured and
+ * available via `kit.notifications`.
  *
  * @param server - An `McpServer` or low-level `Server` instance.
  * @param options - Connection and client-capability options.

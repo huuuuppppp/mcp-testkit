@@ -1,19 +1,20 @@
 # Roadmap
 
 This is a living plan, not a promise. Priorities may shift based on community
-feedback.
-
-## 0.2
-
-- [ ] `expectResource(uri)` and `expectPrompt(name, args)` chainable helpers
-- [ ] Time-travel request/response log on the harness for advanced assertions
-- [ ] Built-in `node:test`-friendly expect bridge (preserves `t.assert`)
+feedback. Shipped versions are recorded in [CHANGELOG.md](./CHANGELOG.md).
 
 ## 0.3
 
-- [ ] Optional streaming/SSE transport support in the contract CLI
+- [ ] `expectResource(uri)` and `expectPrompt(name, args)` chainable helpers
 - [ ] Snapshot testing for `listTools` / `listPrompts` output
-- [ ] Coverage-style report of which tools/resources were exercised
+- [ ] Time-travel request/response log on the harness for advanced assertions
+- [ ] Built-in `node:test`-friendly expect bridge (preserves `t.assert`)
+
+## 0.4
+
+- [ ] Optional streaming/SSE transport support in the contract CLI
+- [ ] Coverage-style report of which tools/resources/prompts were exercised
+- [ ] Progress notification assertions via `waitForNotification`
 
 ## 1.0
 

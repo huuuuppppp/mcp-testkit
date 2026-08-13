@@ -183,6 +183,86 @@ For anything the harness doesn't wrap, the official SDK `Client` is exposed:
 kit.client.setRequestHandler(/* ... */);
 ```
 
+### Notifications
+
+Every server-to-client notification is captured by the harness. The client
+transport's inbound message handler is wrapped, so capture is transparent and
+does not interfere with the SDK's own notification handling.
+
+```ts
+await kit.callTool("log", { level: "info", message: "started" });
+
+// inspect the full history
+kit.notifications; // [{ method, params, timestamp }, ...]
+
+// framework-agnostic assertions
+kit.expectNotification("notifications/message").toBeSent();
+kit.expectNotification("notifications/message").toIncludeParams({ level: "info" });
+kit.expectNotification("notifications/message").toHaveCount(1);
+kit.expectNotification("notifications/resources/updated").not.toBeSent();
+
+// wait for an async notification
+const n = await kit.waitForNotification("notifications/message", 2000);
+
+// subscribe to live notifications
+const off = kit.onNotification((n) => console.log(n.method));
+off();
+```
+
+### Sampling (LLM requests from server to client)
+
+When a server calls `sampling/createMessage` to ask the client to sample an
+LLM, you typically want a deterministic fake. The harness advertises the
+`sampling` capability by default and exposes a mock responder:
+
+```ts
+// fixed response for every sampling request
+kit.sampling.respondWith({
+  role: "assistant",
+  model: "test-model",
+  content: { type: "text", text: "mocked completion" },
+  stopReason: "endTurn",
+});
+
+// ...or compute one dynamically
+kit.sampling.setResponder((params) => ({
+  role: "assistant",
+  model: "dyno",
+  content: { type: "text", text: "echo" },
+}));
+
+// assert the server asked for sampling
+expect(kit.sampling.requests).toHaveLength(1);
+```
+
+### Elicitation (server asks the client for user input)
+
+Similarly, the harness advertises `elicitation` by default and lets you script
+the user's response:
+
+```ts
+kit.elicitation.acceptWith({ answer: "Ada" });  // action: "accept"
+kit.elicitation.decline();                      // action: "decline" (default)
+kit.elicitation.cancel();                       // action: "cancel"
+
+// full control
+kit.elicitation.setResponder((params) => ({
+  action: "accept",
+  content: { echoed: params.message },
+}));
+
+expect(kit.elicitation.requests[0]?.message).toBe("What is your name?");
+```
+
+To test how your server behaves with a client that does **not** support one of
+these capabilities, disable it:
+
+```ts
+const kit = await createTestKit(server, {
+  mocks: { sampling: false, elicitation: false },
+});
+```
+
 ---
 
 ## Contract testing in CI
@@ -248,6 +328,7 @@ if (!result.ok) process.exit(1);
 | `clientInfo` | `Implementation` | Client identity sent during initialize. |
 | `clientCapabilities` | `ClientCapabilities` | Capabilities to advertise. |
 | `setupTransports` | `(t) => void \| Promise<void>` | Hook to customize the linked transports. |
+| `mocks` | `{ sampling?, elicitation? }` | Configure mock client capabilities (both enabled by default). |
 | `timeoutMs` | `number` | Default request timeout. |
 
 ### `MCPTestKit`
@@ -265,6 +346,13 @@ if (!result.ok) process.exit(1);
 | `ping(timeout?)` | Send a ping. |
 | `expect(result)` | Start an assertion chain. |
 | `expectTool(name, args?)` | Call a tool and start an assertion chain. |
+| `notifications` | Snapshot of captured server-to-client notifications. |
+| `onNotification(fn)` | Subscribe to notifications; returns unsubscribe. |
+| `waitForNotification(method, ms?)` | Resolve when a matching notification arrives. |
+| `expectNotification(method)` | Assert on notifications (`toBeSent`, `toHaveCount`, `toIncludeParams`). |
+| `clearNotifications()` | Clear captured notification history. |
+| `sampling` | Mock for `sampling/createMessage` requests. |
+| `elicitation` | Mock for `elicitation/create` requests. |
 | `capabilities` / `serverInfo` | Values reported during initialize. |
 | `close()` | Tear down the connection. |
 
