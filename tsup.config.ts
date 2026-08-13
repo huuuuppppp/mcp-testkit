@@ -5,6 +5,7 @@ export default defineConfig({
     index: "src/index.ts",
     contract: "src/contract.ts",
     bin: "src/bin.ts",
+    "node-test": "src/node-test.ts",
   },
   format: ["esm", "cjs"],
   dts: false,

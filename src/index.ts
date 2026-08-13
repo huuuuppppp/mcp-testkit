@@ -45,3 +45,18 @@ export {
   type CapturedNotification,
   type NotificationExpectation,
 } from "./notifications.js";
+
+export {
+  expectResource,
+  expectPrompt,
+  type ResourceExpectation,
+  type PromptExpectation,
+} from "./content-assertions.js";
+
+export {
+  createSnapshotStore,
+  SnapshotStore,
+  type SnapshotOptions,
+} from "./snapshot.js";
+
+export { RequestLog, type RequestLogEntry, type RequestOutcome } from "./request-log.js";

@@ -3,18 +3,19 @@
 This is a living plan, not a promise. Priorities may shift based on community
 feedback. Shipped versions are recorded in [CHANGELOG.md](./CHANGELOG.md).
 
-## 0.3
+## Shipped
 
-- [ ] `expectResource(uri)` and `expectPrompt(name, args)` chainable helpers
-- [ ] Snapshot testing for `listTools` / `listPrompts` output
-- [ ] Time-travel request/response log on the harness for advanced assertions
-- [ ] Built-in `node:test`-friendly expect bridge (preserves `t.assert`)
+- **0.3.0**: request/response log, `expectResource`/`expectPrompt` chains,
+  framework-agnostic snapshots, and a `node:test` bridge.
+- **0.2.0**: notification capture and assertions, sampling and elicitation mocks.
+- **0.1.0**: in-process harness, tool/resource/prompt wrappers, contract CLI.
 
 ## 0.4
 
+- [ ] Snapshot testing integration for `listTools`/`listPrompts` via matchers
+- [ ] Progress notification assertions (`onProgress` for a specific request)
 - [ ] Optional streaming/SSE transport support in the contract CLI
 - [ ] Coverage-style report of which tools/resources/prompts were exercised
-- [ ] Progress notification assertions via `waitForNotification`
 
 ## 1.0
 

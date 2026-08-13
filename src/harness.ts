@@ -35,6 +35,18 @@ import {
   type CapturedNotification,
   type NotificationExpectation,
 } from "./notifications.js";
+import { RequestLog, type RequestLogEntry } from "./request-log.js";
+import {
+  expectResource,
+  expectPrompt,
+  type ResourceExpectation,
+  type PromptExpectation,
+} from "./content-assertions.js";
+import {
+  createSnapshotStore,
+  SnapshotStore,
+  type SnapshotOptions,
+} from "./snapshot.js";
 
 /**
  * Any MCP server that can be attached to a transport.
@@ -123,6 +135,8 @@ export class MCPTestKit {
   private readonly serverTransport: Transport;
   private readonly capturedNotifications: CapturedNotification[] = [];
   private readonly notificationListeners = new Set<NotificationListener>();
+  private readonly requestLog = new RequestLog();
+  private snapshotStore?: SnapshotStore;
   private closed = false;
 
   private constructor(
@@ -220,19 +234,22 @@ export class MCPTestKit {
       samplingMock,
       elicitationMock,
     );
-    kit.installNotificationCapture();
+    kit.installObservers();
 
     return kit;
   }
 
   /**
-   * Wrap the client transport's inbound message handler so we can record
-   * every server-to-client notification without interfering with delivery.
+   * Wrap the client transport to capture notifications and pair
+   * requests/responses, transparently to the SDK.
    */
-  private installNotificationCapture(): void {
+  private installObservers(): void {
     const transport = this.clientTransport;
-    const original = transport.onmessage?.bind(transport);
+
+    // Capture inbound messages (responses + notifications).
+    const originalOnMessage = transport.onmessage?.bind(transport);
     transport.onmessage = (message: JSONRPCMessage) => {
+      this.requestLog.recordIncoming(message);
       if (isNotificationMessage(message)) {
         const captured: CapturedNotification = {
           method: message.method,
@@ -248,7 +265,14 @@ export class MCPTestKit {
           }
         }
       }
-      return original?.(message);
+      return originalOnMessage?.(message);
+    };
+
+    // Capture outgoing requests/notifications.
+    const originalSend = transport.send.bind(transport);
+    transport.send = async (message: JSONRPCMessage) => {
+      this.requestLog.recordOutgoing(message);
+      return originalSend(message);
     };
   }
 
@@ -328,6 +352,13 @@ export class MCPTestKit {
     return this.client.readResource({ uri }, { timeout });
   }
 
+  /**
+   * Read a resource and immediately start an assertion chain on the result.
+   */
+  async expectResource(uri: string): Promise<ResourceExpectation> {
+    return expectResource(await this.readResource(uri));
+  }
+
   /** List all prompts registered on the server. */
   listPrompts(timeout?: number): Promise<ListPromptsResult> {
     return this.client.listPrompts(undefined, { timeout });
@@ -342,12 +373,51 @@ export class MCPTestKit {
     return this.client.getPrompt({ name, arguments: args }, { timeout });
   }
 
+  /**
+   * Render a prompt and immediately start an assertion chain on the result.
+   */
+  async expectPrompt(
+    name: string,
+    args?: Record<string, string>,
+  ): Promise<PromptExpectation> {
+    return expectPrompt(await this.getPrompt(name, args));
+  }
+
   /** Request autocompletion for a prompt/resource argument. */
   complete(
     params: Parameters<Client["complete"]>[0],
     timeout?: number,
   ): Promise<CompleteResult> {
     return this.client.complete(params, { timeout });
+  }
+
+  // ── Request log ──────────────────────────────────────────────────
+
+  /**
+   * Paired request/response log observed on the client transport. Useful for
+   * asserting that a tool triggered a specific request (e.g. sampling), or
+   * for debugging protocol-level interactions.
+   */
+  get requests(): readonly RequestLogEntry[] {
+    return this.requestLog.all();
+  }
+
+  /** Return request-log entries for a given JSON-RPC method. */
+  requestsFor(method: string): readonly RequestLogEntry[] {
+    return this.requestLog.forMethod(method);
+  }
+
+  // ── Snapshots ─────────────────────────────────────────────────────
+
+  /**
+   * Lazily create (or return) a {@link SnapshotStore} for this kit. Call
+   * `kit.snapshots.save()` in a teardown hook to persist.
+   */
+  snapshot(options?: SnapshotOptions): SnapshotStore {
+    if (!this.snapshotStore) {
+      this.snapshotStore = createSnapshotStore(options);
+    }
+    return this.snapshotStore;
   }
 
   // ── Notifications ────────────────────────────────────────────────
@@ -436,6 +506,11 @@ export class MCPTestKit {
     if (this.closed) return;
     this.closed = true;
     this.notificationListeners.clear();
+    try {
+      this.snapshotStore?.save();
+    } catch {
+      // snapshot persistence must not break close
+    }
     const results = await Promise.allSettled([
       this.client.close(),
       this.server.close ? this.server.close() : Promise.resolve(),

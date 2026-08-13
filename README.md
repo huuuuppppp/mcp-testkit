@@ -175,6 +175,71 @@ structured(result);      // structuredContent or undefined
 isErrorResult(result);   // boolean
 ```
 
+### Request/response log
+
+Every JSON-RPC request/response on the client transport is paired and logged,
+which is useful for asserting that a tool triggered a downstream request (for
+example, sampling) or for debugging protocol interactions:
+
+```ts
+await kit.callTool("ask", { prompt: "hi" });
+
+kit.requests; // [{ id, method, params, result, outcome, durationMs, ... }]
+kit.requestsFor("sampling/createMessage"); // just sampling requests
+kit.requests.filter((r) => r.outcome === "error"); // failed requests
+```
+
+### Resource and prompt assertions
+
+Chain assertions directly onto reads and prompts:
+
+```ts
+(await kit.expectResource("doc://readme"))
+  .toContainText("Body")
+  .toHaveMimeType("text/markdown")
+  .not.toContainBlob();
+
+(await kit.expectPrompt("summarize", { text: "long text..." }))
+  .toHaveMessageCount(2)
+  .toHaveRole("assistant")
+  .toContainText("summarize");
+```
+
+Resource matchers: `toContainText`, `toHaveText`, `toHaveContentCount`,
+`toBeFromUri`, `toHaveMimeType`, `toContainBlob`. Prompt matchers:
+`toHaveDescriptionContaining`, `toHaveMessageCount`, `toHaveRole`,
+`toContainText`. All support `.not`.
+
+### Snapshots
+
+Framework-agnostic snapshots are written to `__snapshots__/` as JSON. Set
+`UPDATE_SNAPSHOTS=1` to update them (the same convention as Vitest/Jest):
+
+```ts
+const snap = kit.snapshot({ file: "server.snap.json" });
+const { tools } = await kit.listTools();
+snap.expect("tools", tools.map((t) => t.name));
+// call snap.save() in an afterEach/afterAll hook (the node:test bridge does this)
+```
+
+### Using with Node's built-in test runner
+
+The `mcp-testkit/node-test` subpath provides a bridge that auto-closes the kit
+and saves snapshots when using `node --test`:
+
+```ts
+import test from "node:test";
+import { withNodeTest } from "mcp-testkit/node-test";
+
+test("adds numbers", async (t) => {
+  const { kit } = await withNodeTest(t, buildServer());
+  (await kit.expectTool("add", { a: 1, b: 2 })).toBeText("3");
+});
+```
+
+Vitest, Jest, and Bun test work without any bridge — just use `createTestKit`
+and close the kit in an `afterEach`.
+
 ### Accessing the raw client
 
 For anything the harness doesn't wrap, the official SDK `Client` is exposed:
@@ -353,6 +418,10 @@ if (!result.ok) process.exit(1);
 | `clearNotifications()` | Clear captured notification history. |
 | `sampling` | Mock for `sampling/createMessage` requests. |
 | `elicitation` | Mock for `elicitation/create` requests. |
+| `requests` / `requestsFor(method)` | Paired JSON-RPC request/response log. |
+| `expectResource(uri)` | Read a resource and start an assertion chain. |
+| `expectPrompt(name, args?)` | Render a prompt and start an assertion chain. |
+| `snapshot(options?)` | Lazily create a `SnapshotStore` for the kit. |
 | `capabilities` / `serverInfo` | Values reported during initialize. |
 | `close()` | Tear down the connection. |
 

@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-13
+
+### Added
+- **Request/response log**: the harness records paired JSON-RPC requests and
+  responses by wrapping the client transport, exposing method, params, result
+  or error, outcome, and round-trip duration via `kit.requests`,
+  `kit.requestsFor(method)`, and `kit.requests.filter(r => r.outcome === "error")`.
+- **Resource assertions**: `expectResource(result)` / `kit.expectResource(uri)`
+  with `toContainText`, `toHaveText`, `toHaveContentCount`, `toBeFromUri`,
+  `toHaveMimeType`, `toContainBlob`, and `.not` negation.
+- **Prompt assertions**: `expectPrompt(result)` / `kit.expectPrompt(name, args)`
+  with `toHaveDescriptionContaining`, `toHaveMessageCount`, `toHaveRole`,
+  `toContainText`, and `.not` negation.
+- **Framework-agnostic snapshots**: `createSnapshotStore()` / `kit.snapshot()`
+  writes JSON snapshots under `__snapshots__/`, supports
+  `UPDATE_SNAPSHOTS=1` to update, and prunes dead keys.
+- **`node:test` bridge**: `withNodeTest(t, server)` (from the
+  `mcp-testkit/node-test` subpath) auto-closes the kit and saves snapshots via
+  the test context's `after` hook; verified against the real `node --test` runner.
+
+[0.3.0]: https://github.com/huuuuppppp/mcp-testkit/compare/v0.2.0...v0.3.0
 ## [0.2.0] - 2026-08-13
 
 ### Added

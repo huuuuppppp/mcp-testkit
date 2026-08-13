@@ -9,3 +9,4 @@ coverage/
 *.log
 .npm/
 .cache/
+__snapshots__/
