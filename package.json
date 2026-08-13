@@ -1,0 +1,79 @@
+{
+  "name": "mcp-testkit",
+  "version": "0.1.0",
+  "description": "Type-safe, in-process testing toolkit for Model Context Protocol (MCP) servers. Test tools, resources, and prompts without subprocesses, with framework-agnostic assertions and a contract CLI.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "testing",
+    "test",
+    "testkit",
+    "mcp-server",
+    "mcp-client",
+    "tools",
+    "llm",
+    "ai"
+  ],
+  "author": "huuuuppppp",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "import": "./dist/contract.js",
+      "require": "./dist/contract.cjs"
+    }
+  },
+  "bin": {
+    "mcp-testkit": "./dist/bin.cjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup && tsc --emitDeclarationOnly --outDir dist",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "release:check": "npm run typecheck && npm run test && npm run build",
+    "docs:dev": "echo 'See README.md'",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "zod": "^3.23.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huuuuppppp/mcp-testkit.git"
+  },
+  "homepage": "https://github.com/huuuuppppp/mcp-testkit#readme",
+  "bugs": {
+    "url": "https://github.com/huuuuppppp/mcp-testkit/issues"
+  }
+}
