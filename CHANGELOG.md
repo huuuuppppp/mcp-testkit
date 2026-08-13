@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-08-13
+
+### Fixed
+- Request log now captures **server-initiated requests** (e.g.
+  `sampling/createMessage`, `elicitation/create`) in addition to
+  client-initiated ones, so `kit.requestsFor("sampling/createMessage")` works as
+  expected. Each entry includes a `direction` field (`client->server` or
+  `server->client`).
+
+### Added
+- Runnable `examples/task-server.mjs` + `examples/demo.mjs`: a task-manager MCP
+  server exercised end-to-end with `mcp-testkit` (tools, resources, prompts,
+  sampling mock, notifications, request log).
+- `RequestLog.serverRequests()` accessor.
+
+[0.3.1]: https://github.com/huuuuppppp/mcp-testkit/compare/v0.3.0...v0.3.1
+
 ## [0.3.0] - 2026-08-13
 
 ### Added

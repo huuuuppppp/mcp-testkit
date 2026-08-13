@@ -59,4 +59,4 @@ export {
   type SnapshotOptions,
 } from "./snapshot.js";
 
-export { RequestLog, type RequestLogEntry, type RequestOutcome } from "./request-log.js";
+export { RequestLog, type RequestLogEntry, type RequestOutcome, type RequestDirection } from "./request-log.js";

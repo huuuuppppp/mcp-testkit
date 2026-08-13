@@ -163,6 +163,7 @@ describe("sampling mock", () => {
 
     const result = await kit.callTool("ask", { prompt: "why?" });
     kit.expect(result).toBeText("mocked answer");
+    expect(kit.requestsFor("sampling/createMessage")).toHaveLength(1);
   });
 
   it("scripts a response with a dynamic responder", async () => {

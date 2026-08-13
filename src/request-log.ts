@@ -3,12 +3,17 @@ import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 /** The outcome of a JSON-RPC request. */
 export type RequestOutcome = "success" | "error";
 
+/** Direction of a request relative to the client. */
+export type RequestDirection = "client->server" | "server->client";
+
 /** A single paired request/response entry in the log. */
 export interface RequestLogEntry {
   /** The JSON-RPC request id, or `undefined` for notifications. */
   id?: string | number;
   /** The method name, e.g. `tools/call`. */
   method: string;
+  /** Direction of the request relative to the client. */
+  direction: RequestDirection;
   /** The request params, if any. */
   params?: unknown;
   /** The response result (for successful requests). */
@@ -17,70 +22,107 @@ export interface RequestLogEntry {
   error?: { code: number; message: string; data?: unknown };
   /** Whether the request succeeded. */
   outcome: RequestOutcome;
-  /** Epoch milliseconds when the request was sent. */
+  /** Epoch milliseconds when the request was observed. */
   requestTimestamp: number;
-  /** Epoch milliseconds when the response was received. */
+  /** Epoch milliseconds when the response was received/sent. */
   responseTimestamp?: number;
   /** Round-trip duration in milliseconds. */
   durationMs?: number;
 }
 
+function hasId(message: JSONRPCMessage): message is JSONRPCMessage & {
+  id: string | number;
+} {
+  return "id" in message && message.id !== undefined;
+}
+
+function isRequest(
+  message: JSONRPCMessage,
+): message is JSONRPCMessage & { method: string; id: string | number } {
+  return "method" in message && hasId(message);
+}
+
+function isResponse(
+  message: JSONRPCMessage,
+): message is JSONRPCMessage & {
+  id: string | number;
+  result?: unknown;
+  error?: { code: number; message: string; data?: unknown };
+} {
+  return hasId(message) && !("method" in message);
+}
+
 /**
- * Records paired JSON-RPC requests/responses observed on a transport.
+ * Records paired JSON-RPC requests/responses observed on a client transport.
  *
- * The harness installs this by wrapping the client transport's `send` and
- * `onmessage`. It is intentionally independent of any test framework.
+ * It captures both directions: client-initiated requests (e.g. `tools/call`)
+ * and server-initiated requests (e.g. `sampling/createMessage`,
+ * `elicitation/create`, `roots/list`).
  */
 export class RequestLog {
   private readonly entries: RequestLogEntry[] = [];
-  private readonly pending = new Map<
-    string | number,
-    RequestLogEntry
-  >();
+  private readonly pending = new Map<string | number, RequestLogEntry>();
 
-  /** Record an outgoing message (request or notification). */
+  /** Record an outgoing message from the client. */
   recordOutgoing(message: JSONRPCMessage, timestamp = Date.now()): void {
-    if (!("method" in message)) return;
-    if (!("id" in message) || message.id === undefined) {
-      // notification — record without pairing
+    if (isRequest(message)) {
+      const entry: RequestLogEntry = {
+        id: message.id,
+        method: message.method,
+        direction: "client->server",
+        params: (message as { params?: unknown }).params,
+        outcome: "success",
+        requestTimestamp: timestamp,
+      };
+      this.pending.set(message.id, entry);
+      this.entries.push(entry);
+    } else if (isResponse(message)) {
+      this.pairResponse(message.id, message, timestamp);
+    } else if ("method" in message) {
+      // outbound notification
       this.entries.push({
         method: message.method,
+        direction: "client->server",
         params: (message as { params?: unknown }).params,
         outcome: "success",
         requestTimestamp: timestamp,
       });
-      return;
     }
-    const id = message.id as string | number;
-    const entry: RequestLogEntry = {
-      id,
-      method: message.method,
-      params: (message as { params?: unknown }).params,
-      outcome: "success",
-      requestTimestamp: timestamp,
-    };
-    this.pending.set(id, entry);
-    this.entries.push(entry);
   }
 
-  /** Record an incoming response message and pair it with its request. */
+  /** Record an incoming message to the client. */
   recordIncoming(message: JSONRPCMessage, timestamp = Date.now()): void {
-    if (!("id" in message) || message.id === undefined) return;
-    const id = message.id as string | number;
+    if (isRequest(message)) {
+      // A server-initiated request (sampling, elicitation, roots, ...).
+      const entry: RequestLogEntry = {
+        id: message.id,
+        method: message.method,
+        direction: "server->client",
+        params: (message as { params?: unknown }).params,
+        outcome: "success",
+        requestTimestamp: timestamp,
+      };
+      this.pending.set(message.id, entry);
+      this.entries.push(entry);
+    } else if (isResponse(message)) {
+      this.pairResponse(message.id, message, timestamp);
+    }
+  }
+
+  private pairResponse(
+    id: string | number,
+    message: { result?: unknown; error?: { code: number; message: string; data?: unknown } },
+    timestamp: number,
+  ): void {
     const entry = this.pending.get(id);
     if (!entry) return;
-
     entry.responseTimestamp = timestamp;
     entry.durationMs = timestamp - entry.requestTimestamp;
-    const msg = message as {
-      result?: unknown;
-      error?: { code: number; message: string; data?: unknown };
-    };
-    if (msg.error) {
+    if (message.error) {
       entry.outcome = "error";
-      entry.error = msg.error;
+      entry.error = message.error;
     } else {
-      entry.result = msg.result;
+      entry.result = message.result;
     }
     this.pending.delete(id);
   }
@@ -103,6 +145,11 @@ export class RequestLog {
   /** Return only failed requests. */
   errors(): readonly RequestLogEntry[] {
     return this.entries.filter((e) => e.outcome === "error");
+  }
+
+  /** Return server-initiated requests (e.g. sampling). */
+  serverRequests(): readonly RequestLogEntry[] {
+    return this.entries.filter((e) => e.direction === "server->client");
   }
 
   /** Clear the log. */
